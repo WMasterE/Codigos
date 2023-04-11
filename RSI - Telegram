@@ -1,0 +1,98 @@
+//@version=4
+strategy("Scalping - RSI 2 - TP and TSL", overlay=true)
+
+// Definir el token de acceso del bot de Telegram, el ID del grupo o canal de Telegram y el mensaje que se enviará
+telegram_api_key = "TU_TOKEN_DE_ACCESO_DEL_BOT"
+telegram_chat_id = "-1234567890" // donde "-1234567890" es el ID del grupo o canal
+telegram_message = "Se genero una señal de Long/Short"
+
+// Parámetros de entrada
+rsi_length = input(2, title="RSI length")
+overbought = input(95, title="Overbought")
+oversold = input(5, title="Oversold")
+tp_multiple = input(2.0, title="Take Profit Multiple")
+tsl_multiple = input(2.0, title="Trailing Stop Loss Multiple")
+trailing = input(false, title="Trailing Stop Loss")
+trailing_offset = input(0.01, title="Trailing Stop Loss Offset")
+stop_loss = input(0.01, title="Stop Loss")
+
+// Definir una variable para el estado de la posición
+position_state = 0
+
+// Calcular el RSI
+rsi_value = rsi(close, rsi_length)
+
+// Definir las condiciones de entrada
+long_condition = crossover(rsi_value, oversold)
+short_condition = crossunder(rsi_value, overbought)
+
+// Definir las condiciones de salida
+long_exit_condition = trailing ? crossunder(close, trailing_stop) : crossunder(rsi_value, overbought)
+short_exit_condition = trailing ? crossover(close, trailing_stop) : crossover(rsi_value, oversold)
+
+// Definir el nivel de Take Profit y Stop Loss
+take_profit_level = strategy.position_avg_price * tp_multiple
+stop_loss_level = strategy.position_avg_price * (1 - stop_loss)
+
+// Definir el nivel de Trailing Stop Loss si se utiliza
+trailing_stop = trailing ? max(strategy.position_avg_price - (trailing_offset * atr(14)), close) : na
+
+// Comprar si se cumple la condición de entrada larga
+if long_condition and position_state != 1
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long TP/SL", "Long", profit=take_profit_level, loss=stop_loss_level)
+
+    // Actualizar el estado de la posición
+    position_state := 1
+
+    // Actualizar el mensaje para enviar a Telegram
+    telegram_message := "Señal de compra generada en el mercado"
+
+// Vender si se cumple la condición de entrada corta
+if short_condition and position_state != -1
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short TP/SL", "Short", profit=take_profit_level, loss=stop_loss_level)
+
+    // Actualizar el estado de la posición
+    position_state := -1
+
+    // Actualizar el mensaje para enviar a Telegram
+    telegram_message := "Señal de venta generada en el mercado"
+
+// Salir de una posición larga si se cumple la condición de salida larga
+if long_exit_condition and position_state == 1
+    strategy.close("Long")
+
+    // Actualizar el estado de la posición
+position_state := 0
+
+// Actualizar el mensaje para enviar a Telegram
+telegram_message := "Señal de salida de compra generada en el mercado"
+// Salir de una posición corta si se cumple la condición de salida corta
+if short_exit_condition and position_state == -1
+strategy.close("Short")
+// Actualizar el estado de la posición
+position_state := 0
+
+// Actualizar el mensaje para enviar a Telegram
+telegram_message := "Señal de salida de venta generada en el mercado"
+// Enviar el mensaje a Telegram si se generó una señal de trading
+if telegram_message != ""
+pinegram.send(telegram_api_key, telegram_chat_id, telegram_message)
+
+// Dibujar las líneas de Overbought y Oversold en el gráfico
+hline(overbought, color=color.red, linestyle=hline.style_dotted, title="Overbought")
+hline(oversold, color=color.green, linestyle=hline.style_dotted, title="Oversold")
+
+// Dibujar la línea de Take Profit en el gráfico
+plot(take_profit_level, color=color.green, title="Take Profit")
+
+// Dibujar la línea de Stop Loss en el gráfico
+plot(stop_loss_level, color=color.red, title="Stop Loss")
+
+// Dibujar la línea de Trailing Stop Loss en el gráfico si se utiliza
+if trailing
+plot(trailing_stop, color=color.blue, title="Trailing Stop Loss")
+
+// Dibujar el valor del RSI en el gráfico
+plot(rsi_value, color=color.white, title="RSI")

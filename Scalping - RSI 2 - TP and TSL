@@ -1,0 +1,201 @@
+/ This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © nikolai-blazevic
+
+
+
+//@version=4
+study(title="Scalping using RSI 2 indicator", shorttitle="RSI 2 Study", overlay=true)
+
+
+//***********
+// Costants
+//***********
+def_start_date = timestamp("01 Jan 2021 07:30 +0000")
+def_end_date   = timestamp("01 Dec 2024 07:30 +0000")
+
+def_rsi_length = 2
+def_overbought_value = 95
+def_oversold_value   = 5
+
+def_slow_ma_length = 200
+def_fast_ma_length = 50
+def_ma_choice      = "EMA"
+
+def_tick   = 0.5
+def_filter = true
+
+def_ts_perc = 0.5
+def_tp_perc = 0.5
+
+messageEntryL = "Long\nentry"
+messageEntryS = "Short\nentry"
+messageExitL  = "Long\nexit"
+messageExitS  = "Short\nexit"
+
+
+//***********
+// Change the optional parameters
+//***********
+start_time  = input(title="Start date", defval=def_start_date, type=input.time)
+end_time    = input(title="End date", defval=def_end_date, type=input.time)
+// RSI
+src         = input(title="Source", defval=close, type=input.source)
+rsi_length  = input(title="RSI Length", defval=def_rsi_length, minval=1, type=input.integer)
+overbought_threshold = input(title="Overbought threshold", defval=def_overbought_value, type=input.float)
+oversold_threshold   = input(title="Oversold threshold", defval=def_oversold_value, type=input.float)
+// Moving average
+slow_ma_length = input(title="Slow MA length", defval=def_slow_ma_length, type=input.integer)
+fast_ma_length = input(title="Fast MA length", defval=def_fast_ma_length, type=input.integer)
+ma_choice = input(title="MA choice", defval="EMA", options=["SMA", "EMA"])
+// Input ticker
+//tick   = input(title="Ticker size", defval=def_tick, type=input.float)
+filter = input(title="Trend Filter", defval=def_filter, type=input.bool)
+// Trailing stop (%)
+ts_perc = input(title="Trailing Stop %", defval=def_ts_perc, type=input.float)
+tp_perc = input(title='Take Profit %', defval=def_tp_perc, type=input.float)
+// Other input parameters
+show_slow_ma    = input(title="Show slow MA?", defval=true, type=input.bool)
+show_fast_ma    = input(title="Show fast MA?", defval=true, type=input.bool)
+show_entry_cond = input(title="Show entry conditions?", defval=true, type=input.bool)
+show_long_ts    = input(title="Show long trailing stop?", defval=true, type=input.bool)
+show_short_ts   = input(title="Show short trailing stop?", defval=true, type=input.bool)
+show_long_tp    = input(title="Show long take profit?", defval=true, type=input.bool)
+show_short_tp   = input(title="Show short take profit?", defval=true, type=input.bool)
+show_labels     = input(title="Display labels?", defval=true, type=input.bool)
+
+
+//***********
+// RSI
+//***********
+// Calculate RSI
+up   = rma(max(change(src), 0), rsi_length)
+down = rma(-min(change(src), 0), rsi_length)
+rsi  = (down == 0 ? 100 : (up == 0 ? 0 : 100-100/(1+up/down)))
+
+
+//***********
+// Moving averages
+//***********
+slow_ma = (ma_choice == "SMA" ? sma(close, slow_ma_length) : ema(close, slow_ma_length))
+fast_ma = (ma_choice == "SMA" ? sma(close, fast_ma_length) : ema(close, fast_ma_length))
+// Show the moving averages
+plot(show_slow_ma ? slow_ma : na, color=color.white,  title="Slow MA")
+plot(show_fast_ma ? fast_ma : na, color=color.yellow, title="Fast MA")
+
+var float open_price = 0.0
+var float longStopPrice  = 0.0
+var float shortStopPrice = 0.0
+var float longTakeProfitPrice = 0.0
+var float shortTakeProfitPrice = 0.0
+
+//***********
+// Strategy
+//***********
+// Determine the entry conditions
+// Long position
+ConditionEntryL = time > start_time and time < end_time and (filter == true ? (fast_ma > slow_ma and close > slow_ma and rsi < oversold_threshold) : (fast_ma > slow_ma and rsi < oversold_threshold))
+// Short position
+ConditionEntryS = time > start_time and time < end_time and (filter == true ? (fast_ma < slow_ma and close < slow_ma and rsi > overbought_threshold) : (fast_ma < slow_ma and rsi > overbought_threshold))
+   
+// Submit the entry orders
+// Long position
+if ConditionEntryL
+    open_price := open
+ // Short position 
+if ConditionEntryS
+    open_price := open
+
+// Detect what was last signal (long or short)
+long_short = 0
+long_short := ConditionEntryL ? 1 : ConditionEntryS ? -1 : long_short[1]
+
+// Calculate the trailing stop position
+
+// Long position
+longStopPrice := if long_short==1
+    stopValue = open_price * (1 - ts_perc * 0.01)
+else
+    0
+// Short position
+shortStopPrice := if long_short==-1
+    stopValue = open_price * (1 + ts_perc * 0.01)
+else
+    999999
+
+// Calculate the take profit position
+// Long position
+longTakeProfitPrice := if long_short==1
+    stopTakeValue = open_price * (1 + tp_perc * 0.01)
+    //max(stopTakeValue, high[0])
+else
+    0
+// Short position
+shortTakeProfitPrice := if long_short==-1
+    stopTakeValue = open_price * (1 - tp_perc * 0.01)
+    //min(stopTakeValue, low[0])
+else
+    999999
+
+// Check for the take profi hit during a bar
+longTPhit  = long_short==1 and (high > longTakeProfitPrice[1] or close[0] >= longTakeProfitPrice)
+shortTPhit = long_short==-1 and (low < shortTakeProfitPrice[1] or close[0] <= shortTakeProfitPrice)
+
+// Check for the Trailing Stop Loss hit during a bar
+// Long position
+longSLhit = if not(longTPhit)
+    long_short==1 and (low < longStopPrice[1] or close[0] <= longStopPrice)
+else
+    false
+// Short position    
+shortSLhit = if not(shortTPhit)
+    long_short==-1 and (high > shortStopPrice[1] or close[0] >= shortStopPrice)    
+else
+    false
+
+// Determine the exit conditions
+ConditionExitL = (ConditionEntryL and (longTPhit or longSLhit))
+ConditionExitS = (ConditionEntryS and (shortTPhit or shortSLhit))
+
+
+// Plot the trailing stop
+plot(show_long_ts and ConditionEntryL and longSLhit ? longStopPrice : na, style=plot.style_linebr, color=color.fuchsia, transp=10, linewidth=2, title="Long Trailing Stop")
+plot(show_short_ts and ConditionEntryS and shortSLhit ? shortStopPrice : na, style=plot.style_linebr, color=color.fuchsia, transp=10, linewidth=2, title="Short Trailing Stop")
+
+// Plot the take profit
+plot(show_long_tp and ConditionEntryL and longTPhit ? longTakeProfitPrice : na, style=plot.style_linebr, color=color.green, transp=10, linewidth=2, title="Long Fixed Take Profit")
+plot(show_short_tp and ConditionEntryS and shortTPhit ? shortTakeProfitPrice : na, style=plot.style_linebr, color=color.green, transp=10, linewidth=2, title="Short Fixed Take Profit")
+
+// Plot the price of the entry conditions
+plot(show_entry_cond ? open_price : na, color=color.blue, transp=20, linewidth=2, title="Entry conditions")
+
+// Highlights the take profit conditions
+plotshape(show_labels and ConditionEntryL and longTPhit, style=shape.labeldown, location=location.top, color=color.purple, size=size.tiny, title="Long TP", text="Long\nTP", textcolor=color.white)
+plotshape(show_labels and ConditionEntryL and shortTPhit, style=shape.labelup, location=location.bottom, color=color.purple, size=size.tiny, title="Short TP", text="Short\nTP", textcolor=color.white)
+
+// Highlights the long trailing stop conditions
+plotshape (show_labels and ConditionEntryL and longSLhit, style=shape.labelup, text="Long\nTSL", size=size.tiny, textcolor=color.white, color=color.gray, location=location.bottom, title="Long TSL")
+plotshape (not(show_labels) and ConditionEntryL and longSLhit, style=shape.triangledown, text=messageExitL, size=size.tiny, color=color.purple, location=location.top, offset=0, editable=false)
+// Highlights the short trailing stop conditions
+plotshape (show_labels and ConditionEntryS and shortSLhit, style=shape.labeldown, text="Short\nSL", size=size.tiny, textcolor=color.white, color=color.gray, location=location.top, title="Short TSL")
+plotshape (not(show_labels) and ConditionEntryS and shortSLhit, style=shape.triangledown, text=messageExitS, size=size.tiny, color=color.lime, location=location.top, offset=0, editable=false)
+
+// Highlights the long entry conditions
+plotshape (show_labels and ConditionEntryL, style=shape.labelup, text="LONG", size=size.tiny, textcolor=color.white, color=color.green, location=location.belowbar, title="Long Entry")
+plotshape (not(show_labels) and ConditionEntryL, style=shape.triangleup, text=messageEntryL, size=size.tiny, color=color.blue, location=location.bottom, offset=0, editable=false)
+bgcolor (ConditionEntryL ? color.navy : na, transp=80, offset=0, editable=true, title="Long position band")
+// Highlights the short entry conditions
+plotshape (show_labels and ConditionEntryS, style=shape.labeldown, text="SHORT", size=size.tiny, textcolor=color.white, color=color.red, location=location.abovebar, title="Short Entry")
+plotshape (not(show_labels) and ConditionEntryS, style=shape.triangleup, text=messageEntryS, size=size.tiny, color=color.red, location=location.bottom, offset=0, editable=false)
+bgcolor (ConditionEntryS ? color.olive : na, transp=80, offset=0, editable=true, title="Short position band")
+
+
+// Add the alert conditions
+// remember: the alertcondition does not start alerts but creates the condition. The alerts must always be created manually in the Create Alert dialog box
+alertcondition (condition=ConditionEntryL, title="Opening long position", message="It is time to open a long position.")
+alertcondition (condition=ConditionEntryS, title="Opening short position", message="It is time to open a short position.")
+
+alertcondition (condition=ConditionExitL, title="Closing long position", message="It is time to close the long position.")
+alertcondition (condition=ConditionExitS, title="Closing short position", message="It is time to close the short position.")
+
+alertcondition(condition=longTPhit,  title="Long Take Profit", message='Long take profit')
+alertcondition(condition=shortTPhit, title="Short Take Profit", message='Short take profit')

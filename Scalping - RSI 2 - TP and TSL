@@ -1,11 +1,16 @@
-/ This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © nikolai-blazevic
 
-
-
+// Importar la librería Pinegram
 //@version=4
+
+#include "pinegram.pine"
 study(title="Scalping using RSI 2 indicator", shorttitle="RSI 2 Study", overlay=true)
 
+// Definir el token de acceso del bot de Telegram, el ID del grupo o canal y el mensaje que se enviará
+telegram_api_key = "6275001568:AAH_QnL7aN6e-wRI4bvSEQ0IyFK2b8cG46c"
+telegram_chat_id = "-6275001568" // donde "-6275001568" es el ID del grupo o canal
+telegram_message = "Señal de Long/Short generada en el mercado"
 
 //***********
 // Costants
@@ -199,3 +204,6 @@ alertcondition (condition=ConditionExitS, title="Closing short position", messag
 
 alertcondition(condition=longTPhit,  title="Long Take Profit", message='Long take profit')
 alertcondition(condition=shortTPhit, title="Short Take Profit", message='Short take profit')
+
+// Enviar el mensaje al grupo o canal de Telegram
+pinegram.send(telegram_api_key, telegram_chat_id, telegram_message)
